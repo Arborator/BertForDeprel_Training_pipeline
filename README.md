@@ -38,7 +38,7 @@ Run the following command to download and extract UD treebanks and generate conf
 
 - Example:
   ```
-  ./update_treebanks.sh 2.12 https://lindat.mff.cuni.cz/repository/server/api/core/items/55b06337-e49c-4631-9328-b1a38322b1d4/allzip?handleId=11234/1-5901
+  ./update_treebanks.sh 2.16 https://lindat.mff.cuni.cz/repository/server/api/core/items/55b06337-e49c-4631-9328-b1a38322b1d4/allzip?handleId=11234/1-5901
   ```
 
 ### 2. Train Models
