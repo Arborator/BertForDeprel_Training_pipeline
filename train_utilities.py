@@ -30,7 +30,7 @@ def shuffle_sentences(treebank_name, version):
     
     random.Random(42).shuffle(all_sentences)
 
-    model_folder_path = os.path.join(PATH_MODELS, treebank_name)
+    model_folder_path = os.path.join(PATH_MODELS, f"{treebank_name}@{version}")
 
     output_file_path = os.path.join( model_folder_path, f"{treebank_name}_train.conllu")
     token_count = 0
@@ -58,7 +58,7 @@ def train_model(treebank_name, version):
 
     max_epoch = 64
 
-    model_folder_path = os.path.join(PATH_MODELS, treebank_name)
+    model_folder_path = os.path.join(PATH_MODELS, f"{treebank_name}@{version}")
     if not os.path.exists(model_folder_path):
         os.makedirs(model_folder_path)
     
@@ -100,7 +100,7 @@ def train_all_models(version):
             continue
         else:
             try:
-                model_folder_path = os.path.join(PATH_MODELS, treebank_name)
+                model_folder_path = os.path.join(PATH_MODELS, f"{treebank_name}@{version}")
                 if not os.path.exists(model_folder_path):
                     os.makedirs(model_folder_path)
                     
@@ -112,7 +112,23 @@ def train_all_models(version):
     
 if __name__ == "__main__":
 
-    train_all_models(sys.argv[1])
+    if len(sys.argv) < 2:
+        print("Usage: start_train.sh <UD_VERSION> [TREEBANK_NAME]")
+        sys.exit(1)
 
+    version = sys.argv[1]
+
+    if len(sys.argv) >= 3:
+        treebank_name = sys.argv[2]
+        try:
+            model_folder_path = os.path.join(PATH_MODELS, f"{treebank_name}@{version}")
+            if not os.path.exists(model_folder_path):
+                os.makedirs(model_folder_path)
+            shuffle_sentences(treebank_name, version)
+            train_model(treebank_name, version)
+        except Exception as e:
+            logging.error(f"Error occurred while training {treebank_name}: {e}")
+    else:
+        train_all_models(version)
 
 
