@@ -8,6 +8,7 @@ import json
 import sys
 import requests
 import logging
+import shutil
 from bs4 import BeautifulSoup
 import xml.etree.ElementTree as ET
 
@@ -15,7 +16,7 @@ from utils import setup_logging, PATH_TREEBANKS, PATH_MODELS
 
 """
 treebank_utilities.py
-This module provides utilities for downloading, extracting, and configuring Universal Dependencies (UD) treebanks and their associated language mappings.
+This module provides utilities for downloading, extracting, and configuring Universal Dependencies (UD) and Surface-syntactic Universal Dependencies (SUD) treebanks and their associated language mappings.
 Functions:
     get_treebanks(version, treebanks_download_url):
         Downloads and extracts the UD treebanks archive for a specified version from a given URL.
@@ -31,25 +32,52 @@ Usage:
 
 languages_mapping = {}
 
-def get_treebanks(version, treebanks_download_url):
+def get_treebanks(version, treebanks_download_url, treebank_type='UD'):
 
+    treebank_type_lower = treebank_type.lower()
+    default_treebank_file = os.path.join(PATH_TREEBANKS, f'{treebank_type_lower}-treebanks-v{version}.tgz')
+    
+    source_file = None
+    
+    if treebanks_download_url.startswith('/'):
+        source_file = treebanks_download_url
+        if not os.path.exists(source_file):
+            error_msg = f"{treebank_type} treebank file not found at {source_file}"
+            logging.error(error_msg)
+            raise FileNotFoundError(error_msg)
+        if source_file != default_treebank_file:
+            shutil.copy2(source_file, default_treebank_file)
+        return
+    
+    if os.path.exists(default_treebank_file):
+        return
+    
+    if treebanks_download_url.lower() == 'local':
+        error_msg = f"{treebank_type} treebank file not found at {default_treebank_file}. Please provide the file path or URL."
+        logging.error(error_msg)
+        raise FileNotFoundError(error_msg)
+    
     response = requests.get(treebanks_download_url)
 
     if response.status_code == 200:
         treebanks = response.content
 
-        with zipfile.ZipFile(io.BytesIO(treebanks)) as zf:
-            treebank_zip_file = f'ud-treebanks-v{version}.tgz'
+        if treebanks_download_url.endswith('.zip') or 'allzip' in treebanks_download_url:
+            with zipfile.ZipFile(io.BytesIO(treebanks)) as zf:
+                treebank_zip_file = f'{treebank_type_lower}-treebanks-v{version}.tgz'
 
-            if treebank_zip_file in zf.namelist():
-                zf.extract(treebank_zip_file, path=PATH_TREEBANKS)
-                logging.info(f"Extracted treebank files to {PATH_TREEBANKS}")
-            else:
-                error_msg = "No treebank files found in the zip archive."
-                logging.error(error_msg)
-                raise ValueError(error_msg)
+                if treebank_zip_file in zf.namelist():
+                    zf.extract(treebank_zip_file, path=PATH_TREEBANKS)
+                    logging.info(f"Extracted treebank files to {PATH_TREEBANKS}")
+                else:
+                    error_msg = "No treebank files found in the zip archive."
+                    logging.error(error_msg)
+                    raise ValueError(error_msg)
+        else:
+            with open(default_treebank_file, 'wb') as f:
+                f.write(treebanks)
     else:
-        error_msg = f"Failed to download treebanks. Status code: {response.status_code}"
+        error_msg = f"Failed to download {treebank_type} treebanks. Status code: {response.status_code}"
         logging.error(error_msg)
         raise ConnectionError(error_msg)
 
@@ -82,105 +110,124 @@ def extract_ud_languages():
         raise ConnectionError(error_msg)
 
 
-def create_treebanks_config_files(version):
+def create_treebanks_config_files(version, treebank_type='UD'):
+
+    treebank_type_lower = treebank_type.lower()
+    treebanks_archive_path = os.path.join(PATH_TREEBANKS, f'{treebank_type_lower}-treebanks-v{version}.tgz')
     
-    treebanks_archive_path = os.path.join(PATH_TREEBANKS, f'ud-treebanks-v{version}.tgz')
     if not os.path.exists(treebanks_archive_path):
         error_msg = f"Treebank archive {treebanks_archive_path} does not exist."
         logging.error(error_msg)
         raise FileNotFoundError(error_msg)
 
     languages_mapping = extract_ud_languages()
-    treebanks_folder_path = os.path.join(PATH_TREEBANKS, f'ud-treebanks-v{version}')
-
+    
     with tarfile.open(treebanks_archive_path, 'r:gz') as tar:
         tar.extractall(path=PATH_TREEBANKS)
-        
-        treebanks_info = []
-        for treebank_name in os.listdir(treebanks_folder_path):
-            if treebank_name.startswith('UD'):
-                print(treebank_name)
-                match = re.search(r'_(.*?)-', treebank_name)
-                if match:
+    
+    possible_paths = [
+        os.path.join(PATH_TREEBANKS, f'{treebank_type_lower}-treebanks-v{version}'),
+        os.path.join(PATH_TREEBANKS, f'SUD_release-{version}')
+    ]
+    
+    treebanks_folder_path = None
+    for path in possible_paths:
+        if os.path.exists(path):
+            treebanks_folder_path = path
+            break
+    
+    if not treebanks_folder_path:
+        error_msg = f"Could not find extracted {treebank_type} treebanks folder. Tried: {possible_paths}"
+        logging.error(error_msg)
+        raise FileNotFoundError(error_msg)
+    
+    treebanks_info = []
+    for treebank_name in os.listdir(treebanks_folder_path):
+        if treebank_name.startswith(treebank_type):
+            match = re.search(r'_(.*?)-', treebank_name)
+            if match:
+                language = match.group(1)
+                language_code = languages_mapping.get(language)
+                model_path = f'{treebank_type_lower}-models-v{version}/{treebank_name}'
 
-                    language = match.group(1)
-                    language_code = languages_mapping.get(language)
-                    model_path = f'ud-models-v{version}/{treebank_name}'
+                treebank_info = {
+                    "name": treebank_name,
+                    "language": language,
+                    "language_code": language_code,
+                    "version": version,
+                    "type": treebank_type,
+                    "treebank_stats": get_treebank_stats(treebank_name, version, treebank_type),
+                    "path_model": os.path.join(PATH_MODELS, model_path)
+                }
+                treebanks_info.append(treebank_info)
 
-                    treebank_info = {
-                        "name": treebank_name,
-                        "language": language,
-                        "language_code": language_code,
-                        "version": version,
-                        "treebank_stats": get_treebank_stats(treebank_name),
-                        "path_model": os.path.join(PATH_MODELS, model_path)
-                    }
-                    treebanks_info.append(treebank_info)
+    config_file = os.path.join(PATH_TREEBANKS, f'{treebank_type_lower}_treebanks_config.json')
 
-        config_file = os.path.join(PATH_TREEBANKS, 'treebanks_config.json')
+    with open(config_file, 'w') as f:
+        json.dump(treebanks_info, f, indent=4)
 
-        with open(config_file, 'w') as f:
-            json.dump(treebanks_info, f, indent=4)
-
-        os.remove(treebanks_archive_path)
-        
-        logging.info(f"Created treebanks configuration file at {config_file}")
+    os.remove(treebanks_archive_path)
+    
+    logging.info(f"Created treebanks configuration file at {config_file}")
 
 
-def get_treebank_stats(treebank_name):
+def get_treebank_stats(treebank_name, version, treebank_type='UD'):
 
-    treebanks_folder_path = os.path.join(PATH_TREEBANKS, f'ud-treebanks-v{version}')
-    treebank_folder_path = os.path.join(treebanks_folder_path, treebank_name)
+    treebank_type_lower = treebank_type.lower()
+    
+    possible_base_paths = [
+        os.path.join(PATH_TREEBANKS, f'{treebank_type_lower}-treebanks-v{version}'),
+        os.path.join(PATH_TREEBANKS, f'SUD_release-{version}')
+    ]
+    
+    treebank_folder_path = None
+    for base_path in possible_base_paths:
+        potential_path = os.path.join(base_path, treebank_name)
+        if os.path.exists(potential_path):
+            treebank_folder_path = potential_path
+            break
+    
+    if not treebank_folder_path:
+        logging.warning(f"Could not find treebank folder for {treebank_name}")
+        return {}
+    
     stats_path = os.path.join(treebank_folder_path, 'stats.xml')
 
 
-    tree = ET.parse(stats_path)
-    root = tree.getroot()
-    size = root.find('size')
-    total = size.find('total')
+    if not os.path.exists(stats_path):
+        logging.warning(f"Stats file not found at {stats_path}")
+        return {}
+    
+    try:
+        tree = ET.parse(stats_path)
+        root = tree.getroot()
+        size = root.find('size')
+        total = size.find('total')
 
-    total_tokens = int(total.find('tokens').text)
-    total_sentences = int(total.find('sentences').text)
-
-    treebank_stats = {
-        'total_tokens': int(total.find('tokens').text),
-        'total_sentences': int(total.find('sentences').text),
-        'train_tokens': int(size.find('train/tokens').text),
-        'train_sentences': int(size.find('train/sentences').text),
-        'dev_tokens': int(size.find('dev/tokens').text),
-        'dev_sentences': int(size.find('dev/sentences').text),
-        'test_tokens': int(size.find('test/tokens').text),
-        'test_sentences': int(size.find('test/sentences').text)
-    }
-    return treebank_stats
+        treebank_stats = {
+            'total_tokens': int(total.find('tokens').text),
+            'total_sentences': int(total.find('sentences').text),
+            'train_tokens': int(size.find('train/tokens').text),
+            'train_sentences': int(size.find('train/sentences').text),
+            'dev_tokens': int(size.find('dev/tokens').text),
+            'dev_sentences': int(size.find('dev/sentences').text),
+            'test_tokens': int(size.find('test/tokens').text),
+            'test_sentences': int(size.find('test/sentences').text)
+        }
+        return treebank_stats
+    except Exception as e:
+        logging.warning(f"Error parsing stats for {treebank_name}: {e}")
+        return {}
     
 
 if __name__ == "__main__":
 
-    version = sys.argv[1] 
-    treebanks_download_url = sys.argv[2] 
+    treebank_type = sys.argv[1].upper()
+    version = sys.argv[2] 
+    treebanks_download_url = sys.argv[3] if len(sys.argv) > 3 else 'local'
 
     setup_logging()
-    logging.info(f"Starting treebank extraction for version {version}")
 
-    get_treebanks(version, treebanks_download_url)
+    get_treebanks(version, treebanks_download_url, treebank_type)
     extract_ud_languages()
-    create_treebanks_config_files(version)
-
-    logging.info(f"Treebank extraction and configuration completed for version {version}")
-
-
-
-
-        
-    
-
-                
-
-
-    
-    
-
-
-        
-    
+    create_treebanks_config_files(version, treebank_type)

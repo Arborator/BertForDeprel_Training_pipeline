@@ -14,8 +14,19 @@ CONFIG_FILE_PATH = os.path.join(PATH_TREEBANKS, 'treebanks_config.json')
 
 def shuffle_sentences(treebank_name, version):
 
-    treebanks_folder_path = os.path.join(PATH_TREEBANKS, f"ud-treebanks-v{version}")
-    treebank_folder_path = os.path.join(treebanks_folder_path, treebank_name)
+    ud_folder = os.path.join(PATH_TREEBANKS, f"ud-treebanks-v{version}")
+    sud_folder = os.path.join(PATH_TREEBANKS, f"sud-treebanks-v{version}")
+
+    ud_treebank_path = os.path.join(ud_folder, treebank_name)
+    sud_treebank_path = os.path.join(sud_folder, treebank_name)
+
+    if os.path.isdir(ud_treebank_path):
+        treebank_folder_path = ud_treebank_path
+    elif os.path.isdir(sud_treebank_path):
+        treebank_folder_path = sud_treebank_path
+    else:
+        raise FileNotFoundError(
+            f"Treebank '{treebank_name}' not found in either {ud_folder} or {sud_folder}")
 
     all_sentences = []
     for file in os.listdir(treebank_folder_path):
