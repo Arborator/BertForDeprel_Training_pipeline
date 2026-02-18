@@ -9,7 +9,16 @@ from conllup.conllup import sentenceConllToJson
 from utils import PATH_TREEBANKS, PATH_MODELS, PATH_BERTFORDEPREL_VENV, PATH_BERTFORDEPREL_SCRIPT, setup_logging
 
 
-CONFIG_FILE_PATH = os.path.join(PATH_TREEBANKS, 'treebanks_config.json')
+UD_CONFIG_FILE_PATH = os.path.join(PATH_TREEBANKS, 'ud_treebanks_config.json')
+SUD_CONFIG_FILE_PATH = os.path.join(PATH_TREEBANKS, 'sud_treebanks_config.json')
+
+
+def get_config_file_path(treebank_type):
+    """Get the config file path based on treebank type (UD or SUD)"""
+    if treebank_type == 'SUD':
+        return SUD_CONFIG_FILE_PATH
+    else:  # Default to UD
+        return UD_CONFIG_FILE_PATH
 
 
 def shuffle_sentences(treebank_name, version):
@@ -96,17 +105,26 @@ def train_model(treebank_name, version):
         logging.error(error_msg)
 
 
-def train_all_models(version):
+def train_all_models(version, treebank_type='UD'):
+    """Train all models of a specific type (UD or SUD)"""
+    setup_logging()
+    config_file_path = get_config_file_path(treebank_type)
+    
+    if not os.path.exists(config_file_path):
+        logging.error(f"Config file not found: {config_file_path}")
+        return
 
-    with open(CONFIG_FILE_PATH, 'r', encoding='utf-8') as config_file:
+    with open(config_file_path, 'r', encoding='utf-8') as config_file:
         treebanks = json.load(config_file)
 
     for treebank in treebanks:
         treebank_name = treebank['name']
-        total_tokens = treebank['treebank_stats']['total_tokens']
-        logging.info(f"Preparing to train model for {treebank_name} with {total_tokens} tokens.")
+        treebank_stats = treebank.get('treebank_stats', {})
+        total_tokens = treebank_stats.get('total_tokens', None)
+        
+        logging.info(f"Preparing to train model for {treebank_name} with {total_tokens if total_tokens else 'unknown'} tokens.")
 
-        if total_tokens < 5000:
+        if total_tokens is not None and total_tokens < 5000:
             logging.warning(f"Skipping {treebank_name} due to insufficient tokens ({total_tokens}).")
             continue
         else:
@@ -124,22 +142,41 @@ def train_all_models(version):
 if __name__ == "__main__":
 
     if len(sys.argv) < 2:
-        print("Usage: start_train.sh <UD_VERSION> [TREEBANK_NAME]")
+        print("Usage: start_train.sh <UD_VERSION> [UD|SUD|TREEBANK_NAME]")
+        print("  - ./start_train.sh 2.17           # Train all UD treebanks")
+        print("  - ./start_train.sh 2.17 UD        # Train all UD treebanks")
+        print("  - ./start_train.sh 2.17 SUD       # Train all SUD treebanks")
+        print("  - ./start_train.sh 2.17 TREEBANK  # Train specific treebank")
         sys.exit(1)
 
     version = sys.argv[1]
 
     if len(sys.argv) >= 3:
-        treebank_name = sys.argv[2]
-        try:
-            model_folder_path = os.path.join(PATH_MODELS, f"{treebank_name}@{version}")
-            if not os.path.exists(model_folder_path):
-                os.makedirs(model_folder_path)
-            shuffle_sentences(treebank_name, version)
-            train_model(treebank_name, version)
-        except Exception as e:
-            logging.error(f"Error occurred while training {treebank_name}: {e}")
+        argument = sys.argv[2]
+        
+        if argument.upper() == 'UD':
+            setup_logging()
+            logging.info(f"Training all UD treebanks for version {version}")
+            train_all_models(version, 'UD')
+        elif argument.upper() == 'SUD':
+            setup_logging()
+            logging.info(f"Training all SUD treebanks for version {version}")
+            train_all_models(version, 'SUD')
+        else:
+            treebank_name = argument
+            try:
+                setup_logging()
+                logging.info(f"Training specific treebank: {treebank_name}")
+                model_folder_path = os.path.join(PATH_MODELS, f"{treebank_name}@{version}")
+                if not os.path.exists(model_folder_path):
+                    os.makedirs(model_folder_path)
+                shuffle_sentences(treebank_name, version)
+                train_model(treebank_name, version)
+            except Exception as e:
+                logging.error(f"Error occurred while training {treebank_name}: {e}")
     else:
-        train_all_models(version)
+        setup_logging()
+        logging.info(f"Training all UD treebanks for version {version} (default)")
+        train_all_models(version, 'UD')
 
 
