@@ -53,21 +53,9 @@ def shuffle_sentences(treebank_name, version):
     model_folder_path = os.path.join(PATH_MODELS, f"{treebank_name}@{version}")
 
     output_file_path = os.path.join( model_folder_path, f"{treebank_name}_train.conllu")
-    token_count = 0
-    selected_sentences = []
-
-    for sentence in all_sentences:
-
-        sentence_json = sentenceConllToJson(sentence)
-        num_tokens = len(sentence_json['treeJson']['nodesJson'].values())
-        
-        if token_count + num_tokens > 5000:
-            break
-        selected_sentences.append(sentence)
-        token_count += num_tokens
-
+    
     with open(output_file_path, 'w', encoding='utf-8') as out_f:
-        out_f.write('\n\n'.join(selected_sentences) + '\n')
+        out_f.write('\n\n'.join(all_sentences) + '\n')
 
 
 
