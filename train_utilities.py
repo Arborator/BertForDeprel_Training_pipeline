@@ -64,7 +64,7 @@ def train_model(treebank_name, version):
     setup_logging()
     logging.info(f"Starting training for treebank: {treebank_name}")
 
-    max_epoch = 64
+    max_epoch = 10
 
     model_folder_path = os.path.join(PATH_MODELS, f"{treebank_name}@{version}")
     if not os.path.exists(model_folder_path):
